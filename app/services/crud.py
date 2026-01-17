@@ -46,6 +46,23 @@ async def get_events_by_date(user_id: int, date_str: str) -> list:
         print(f"⚠️ Agenda Query Error: {e}")
         return []
     
+async def get_event_by_id(event_id: int):
+    """
+    Retrieves a single event by its ID.
+    Args:
+        event_id: The primary key ID of the event.
+    Returns:
+        Event data dict or None if not found.
+    """
+    try:
+        response = supabase.table("events").select("*").eq("id", event_id).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"⚠️ Get Event Error: {e}")
+        return None
+
 async def update_event(event_id: int, updates: dict):
     """
     Updates an existing event in Supabase.
