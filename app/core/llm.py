@@ -1,10 +1,10 @@
 # app/core/llm.py
 import os
-from dotenv import load_dotenv
 from google import genai
 from pydantic import BaseModel
 from app.schemas.event import Event
 from app.core.prompts import SYSTEM_PROMPT
+from dotenv import load_dotenv
 
 load_dotenv()
 

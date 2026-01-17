@@ -6,3 +6,4 @@ python-dotenv
 tavily-python
 supabase
 google-genai
+dotenv
