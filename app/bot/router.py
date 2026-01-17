@@ -2,10 +2,13 @@
 Bot Router - The Brain (Member B)
 Routes messages to the correct handler based on chat type
 """
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.core.llm import extract_event_from_text, check_event_intent, detect_update_intent
-from app.bot.responses import format_event_confirmation, send_message
+from app.bot.responses import format_event_confirmation, send_message, edit_message
 from app.bot.date_utils import format_datetime
+from app.core.agent import scavenge_events
+from app.services.crud import save_scavenged_events_batch
+from app.schemas.event import Event
 
 # ============================================================================
 # PHASE 5: IN-MEMORY CONTEXT STORE (Short-Term Memory)
@@ -87,6 +90,22 @@ async def handle_hub_command(text: str, user_id: int):
     # Step A: Input Normalization
     # Convert to lowercase and strip whitespace for consistent matching
     normalized_text = text.lower().strip()
+    
+    # ========================================================================
+    # PHASE 7: /force_briefing - Demo Command for Nightly Briefing
+    # ========================================================================
+    if normalized_text == "/force_briefing":
+        print("   🌙 /force_briefing command detected (DEMO)")
+        await handle_force_briefing(user_id)
+        return
+    
+    # ========================================================================
+    # PHASE 6: /track [topic] - Active Research Mode
+    # ========================================================================
+    if normalized_text.startswith("/track"):
+        print("   🕵️ /track command detected")
+        await handle_track_command(text, user_id)
+        return
     
     # Step B: The Guard Clause - Check for /agenda command
     # Support both strict command (/agenda) and natural language variants
@@ -479,3 +498,262 @@ Please try again later.
         print(f"   ✅ Error notification sent to user {user_id}")
     else:
         print(f"   ❌ Failed to send notification: {result.get('error')}")
+
+
+# ============================================================================
+# PHASE 7: NIGHTLY BRIEFING - /force_briefing Command (Demo)
+# ============================================================================
+
+async def handle_force_briefing(user_id: int):
+    """
+    Phase 7: Force Briefing Command (Demo/Testing)
+    
+    This is a hidden command to demonstrate the nightly briefing feature
+    during hackathon demos without waiting for 9 PM.
+    
+    Usage: Send "/force_briefing" to the bot in private chat
+    
+    Args:
+        user_id: The user's Telegram ID
+    """
+    from app.bot.briefing import force_send_briefing
+    
+    print(f"\n🎯 DEMO: Force briefing for User {user_id}")
+    
+    # Send a confirmation that we're processing
+    loading_msg = "🌙 <b>Generating your briefing...</b>\n\n<i>Fetching tomorrow's schedule...</i>"
+    response = await send_message(user_id, loading_msg)
+    
+    # Get message_id for potential editing
+    message_id = response.get("result", {}).get("message_id") if response.get("ok") else None
+    
+    # Call the force briefing function
+    result = await force_send_briefing(user_id)
+    
+    if result.get("status") == "success":
+        print(f"   ✅ Force briefing sent ({result.get('event_count')} events)")
+    else:
+        print(f"   ❌ Force briefing failed: {result.get('message')}")
+        
+        # Send error message
+        error_msg = f"""
+❌ <b>Briefing Failed</b>
+
+{result.get('message', 'Unknown error')}
+
+Please try again later.
+        """.strip()
+        await send_message(user_id, error_msg)
+
+
+# ============================================================================
+# PHASE 6: ACTIVE RESEARCH MODE - /track Command
+# ============================================================================
+
+async def handle_track_command(text: str, user_id: int):
+    """
+    Phase 6: Active Research Mode - The /track Command Handler
+    
+    Flow:
+    1. Extract topic from command (e.g., "/track CS2103 deadlines" → "CS2103 deadlines")
+    2. Send loading message (Async UI pattern)
+    3. Call Member A's scavenge_events(topic) to search the web
+    4. If no events found → Edit message with "no results" notification
+    5. If events found → Save to DB and edit message with formatted event card
+    
+    Args:
+        text: The full command text (e.g., "/track CS2103 deadlines")
+        user_id: The user's Telegram ID
+    """
+    print(f"\n🕵️ TRACK: Processing research request from User {user_id}")
+    
+    # ========================================================================
+    # STEP 1: Extract topic from command
+    # ========================================================================
+    # Remove "/track" prefix and get the topic
+    # Handle both "/track topic" and "/track  topic" (multiple spaces)
+    topic = text[6:].strip()  # Remove "/track" (6 characters)
+    
+    if not topic:
+        # No topic provided - send helpful error message
+        error_msg = """
+❌ <b>Missing Topic</b>
+
+Please provide a topic to research!
+
+<b>Examples:</b>
+• /track CS2103 deadlines
+• /track NUS academic calendar
+• /track Singapore public holidays
+        """.strip()
+        await send_message(user_id, error_msg)
+        print("   ⚠️ No topic provided")
+        return
+    
+    print(f"   📋 Topic: '{topic}'")
+    
+    # ========================================================================
+    # STEP 2: Send loading message (Async UI pattern)
+    # ========================================================================
+    loading_msg = f"""
+🕵️ <b>Activating Research Agent...</b>
+
+🔍 Searching for '<b>{topic}</b>'...
+
+<i>This may take a few seconds...</i>
+    """.strip()
+    
+    response = await send_message(user_id, loading_msg)
+    
+    if not response.get("ok"):
+        print(f"   ❌ Failed to send loading message: {response.get('error')}")
+        return
+    
+    # Capture message_id for editing later
+    message_id = response.get("result", {}).get("message_id")
+    if not message_id:
+        print("   ❌ No message_id received from Telegram")
+        return
+    
+    print(f"   📤 Loading message sent (message_id: {message_id})")
+    
+    # ========================================================================
+    # STEP 3: Call Member A's scavenge_events function
+    # ========================================================================
+    try:
+        events: List[Event] = await scavenge_events(topic)
+        print(f"   🔍 Scavenge returned {len(events)} events")
+    except Exception as e:
+        print(f"   ❌ Scavenge error: {e}")
+        error_msg = f"""
+❌ <b>Research Failed</b>
+
+Could not search for '<b>{topic}</b>'.
+
+<b>Error:</b> {str(e)}
+
+Please try again later.
+        """.strip()
+        await edit_message(user_id, message_id, error_msg)
+        return
+    
+    # ========================================================================
+    # STEP 4: Handle empty results
+    # ========================================================================
+    if not events:
+        no_results_msg = f"""
+🔍 <b>No Events Found</b>
+
+Could not find specific dates or deadlines for '<b>{topic}</b>'.
+
+<b>Try:</b>
+• Being more specific (e.g., "CS2103 2026 deadlines")
+• Using official names (e.g., "NUS Academic Calendar")
+• Checking for typos
+        """.strip()
+        await edit_message(user_id, message_id, no_results_msg)
+        print("   📭 No events found for topic")
+        return
+    
+    # ========================================================================
+    # STEP 5: Save events to database
+    # ========================================================================
+    save_result = await save_scavenged_events_batch(events, user_id)
+    
+    if save_result.get("status") == "error":
+        error_msg = f"""
+❌ <b>Failed to Save Events</b>
+
+Found {len(events)} events for '<b>{topic}</b>' but could not save them.
+
+<b>Error:</b> {save_result.get('message', 'Unknown error')}
+
+Please try again later.
+        """.strip()
+        await edit_message(user_id, message_id, error_msg)
+        print(f"   ❌ Failed to save events: {save_result.get('message')}")
+        return
+    
+    saved_count = save_result.get("count", len(events))
+    print(f"   ✅ Saved {saved_count} events to database")
+    
+    # ========================================================================
+    # STEP 6: Format and display the results card
+    # ========================================================================
+    result_msg = format_scavenged_events_card(events, topic)
+    
+    # Edit the loading message with the final result
+    edit_result = await edit_message(user_id, message_id, result_msg)
+    
+    if edit_result.get("ok"):
+        print(f"   ✅ Research complete! Displayed {len(events)} events to user")
+    else:
+        print(f"   ❌ Failed to edit message: {edit_result.get('error')}")
+        # Fallback: Send as new message
+        await send_message(user_id, result_msg)
+
+
+def format_scavenged_events_card(events: List[Event], topic: str) -> str:
+    """
+    Format a list of scavenged events into a single consolidated card.
+    
+    Design Spec:
+    - Header: Shows topic and count
+    - Body: List of events with title and formatted date
+    - Footer: Success confirmation
+    - Limit: Show max 10 events, then "...and X more"
+    
+    Args:
+        events: List of Event Pydantic models from scavenge_events()
+        topic: The original search topic for display
+        
+    Returns:
+        HTML-formatted string for Telegram
+    """
+    from app.bot.responses import sanitize_html
+    
+    total_count = len(events)
+    display_count = min(total_count, 10)  # Cap at 10 events
+    
+    # ========================================================================
+    # HEADER
+    # ========================================================================
+    safe_topic = sanitize_html(topic)
+    card = f"🔍 <b>Research Complete: {safe_topic}</b>\n\n"
+    card += f"📋 Found <b>{total_count}</b> event{'s' if total_count != 1 else ''}:\n\n"
+    
+    # ========================================================================
+    # EVENT LIST (max 10)
+    # ========================================================================
+    for idx, event in enumerate(events[:display_count], 1):
+        # Format the title
+        title = sanitize_html(event.title) if event.title else "Untitled Event"
+        
+        # Format the date/time
+        formatted_time = format_datetime(event.start_time) if event.start_time else "Date TBD"
+        
+        # Build event line with numbering
+        card += f"<b>{idx}.</b> {title}\n"
+        card += f"   📅 {formatted_time}\n"
+        
+        # Add location if available
+        if event.location:
+            location = sanitize_html(event.location)
+            card += f"   📍 {location}\n"
+        
+        card += "\n"  # Spacing between events
+    
+    # ========================================================================
+    # "AND X MORE" INDICATOR (if more than 10 events)
+    # ========================================================================
+    if total_count > 10:
+        remaining = total_count - 10
+        card += f"<i>...and {remaining} more event{'s' if remaining != 1 else ''}.</i>\n\n"
+    
+    # ========================================================================
+    # FOOTER
+    # ========================================================================
+    card += "✅ <b>Added to your calendar!</b>\n"
+    card += f"🌐 <i>Source: Web Research</i>"
+    
+    return card.strip()
