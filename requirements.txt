@@ -7,3 +7,5 @@ tavily-python
 supabase
 google-genai
 dotenv
+httpx
+pytz
