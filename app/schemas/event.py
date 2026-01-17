@@ -8,7 +8,7 @@ class Event(BaseModel):
     title: str = Field(..., description="The headline for notifications (e.g., 'CS2103 Lecture', 'Team Meeting')")
     start_time: str = Field(..., description="ISO 8601 start time (e.g., '2026-01-17T14:00:00')")
     
-    end_time: str = Field(..., description="ISO 8601 end time") # Kept required as per your logic, or make Optional if you prefer
+    end_time: Optional[str] = Field(..., description="ISO 8601 end time") # Kept required as per your logic, or make Optional if you prefer
     
     location: Optional[str] = Field(None, description="Physical or virtual location context")
     description: Optional[str] = Field(None, description="Details or agenda")
@@ -17,9 +17,9 @@ class Event(BaseModel):
     
     context_notes: Optional[str] = Field(None, description="The original raw message text for reference")
 
-    web_enrichment: Optional[Dict[str, Any]] = Field(
+    web_enrichment: Optional[str] = Field(
         None, 
-        description="Agent-filled data (links, map_url, summary) from Phase 3"
+        description="Agent-filled data (links, map_url, summary) from Phase 3. Stored as string or will be converted later."
     )
 
     class Config:

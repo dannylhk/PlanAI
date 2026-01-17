@@ -7,6 +7,7 @@ import os
 import httpx
 from typing import Dict, Any
 from app.schemas.event import Event
+from app.bot.date_utils import format_datetime, format_datetime_range
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +27,10 @@ async def send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> Dic
         parse_mode: "HTML" or "Markdown" for formatting
         
     Returns:
-        The response from Telegram API
+        The response from Telegram API containing:
+        - ok: True if successful
+        - result.message_id: The ID of the sent message (use for editing)
+        - error: Error message if failed
         
     BEST PRACTICE:
     - Always use async for network calls (non-blocking)
@@ -43,10 +47,67 @@ async def send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> Dic
     
     try:
         async with httpx.AsyncClient() as client:
+            # httpx makes HTTP POST request to Telegram
+            response = await client.post(url, json=payload, timeout=10.0)
+            return response.json()
+        # in the JSON format, tele always send the structure of {"ok", "result"}
+    except Exception as e:
+        print(f"❌ Error sending message to Telegram: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+async def edit_message(chat_id: int, message_id: int, new_text: str, parse_mode: str = "HTML") -> Dict[str, Any]:
+    """
+    Edit an existing message in a Telegram chat.
+    
+    This is the key function for the "Async UI" pattern:
+    1. Send a loading message with send_message() → get message_id
+    2. Process in background (LLM, enrichment, DB)
+    3. Edit the loading message with this function → show final result
+    
+    Args:
+        chat_id: The chat ID where the message was sent
+        message_id: The ID of the message to edit (from send_message response)
+        new_text: The new text to replace the original message
+        parse_mode: "HTML" or "Markdown" for formatting
+        
+    Returns:
+        The response from Telegram API
+        
+    Example usage:
+    ```python
+    # Step 1: Send loading message
+    response = await send_message(user_id, "🔍 Searching for venue...")
+    message_id = response["result"]["message_id"]
+    
+    # Step 2: Do heavy processing
+    enriched_event = await enrich_event(event)
+    
+    # Step 3: Replace loading message with final result
+    final_text = format_event_summary(enriched_event)
+    await edit_message(user_id, message_id, final_text)
+    ```
+    
+    BEST PRACTICE:
+    - Always check if send_message was successful before trying to edit
+    - Use this to prevent user from thinking bot is frozen
+    - Show progress: "🔍 Searching..." → "✅ Found event!"
+    """
+    url = f"{TELEGRAM_API_URL}/editMessageText"
+    
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": new_text,
+        "parse_mode": parse_mode
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, timeout=10.0)
             return response.json()
     except Exception as e:
-        print(f"❌ Error sending message to Telegram: {e}")
+        print(f"❌ Error editing message on Telegram: {e}")
         return {"ok": False, "error": str(e)}
 
 
@@ -74,8 +135,8 @@ def format_event_confirmation(event: Event) -> str:
     
     # Access Event fields directly (they're class attributes)
     title = event.title
-    start_time = event.start_time
-    end_time = event.end_time
+    start_time = format_datetime(event.start_time)
+    end_time = format_datetime(event.end_time) if event.end_time else "Not specified"
     location = event.location or "Not specified"
     
     # Format the message with HTML
@@ -100,12 +161,15 @@ def format_event_summary(event: Event) -> str:
     This includes web enrichment data if available.
     """
     
+    start_time = format_datetime(event.start_time)
+    end_time = format_datetime(event.end_time) if event.end_time else "Not specified"
+    
     message = f"""
 ✅ <b>Event Added to Your Calendar</b>
 
 📌 <b>{event.title}</b>
-🕐 <b>Start:</b> {event.start_time}
-🕐 <b>End:</b> {event.end_time}
+🕐 <b>Start:</b> {start_time}
+🕐 <b>End:</b> {end_time}
 📍 <b>Location:</b> {event.location or 'Not specified'}
     """.strip()
     
@@ -122,6 +186,124 @@ def format_event_summary(event: Event) -> str:
                 message += f"\n• {summary}"
     
     return message
+
+
+def sanitize_html(text: str) -> str:
+    """
+    Sanitize text for Telegram HTML formatting.
+    
+    Telegram's HTML parser is strict about certain characters.
+    This prevents breaking the message formatting.
+    
+    Args:
+        text: The text to sanitize
+        
+    Returns:
+        Sanitized text safe for Telegram HTML
+        
+    Note: For hackathon/MVP, basic escaping is sufficient.
+    Production apps should use more robust sanitization.
+    """
+    if not text:
+        return ""
+    
+    # Escape special HTML characters
+    text = text.replace("&", "&amp;")  # Must be first!
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    
+    return text
+
+
+def format_event_card(event_data: Dict[str, Any], has_conflict: bool = False) -> str:
+    """
+    Format an event as a "Perfect Card" with HTML styling.
+    
+    This is the Phase 3 specification for displaying events with:
+    - Clean header with event title
+    - Time information with emoji
+    - Web enrichment links (if available)
+    - Conflict warnings (if detected)
+    
+    Args:
+        event_data: Dictionary containing event information:
+            - title: Event title (required)
+            - start_time: ISO 8601 start time (required)
+            - end_time: ISO 8601 end time (optional)
+            - web_link or web_enrichment: URL for additional info (optional)
+        has_conflict: Whether this event conflicts with existing events
+        
+    Returns:
+        HTML-formatted string for Telegram
+        
+    Example:
+    ```python
+    event = {
+        "title": "CS2103 Lecture",
+        "start_time": "2026-01-24T14:00:00",
+        "web_link": "https://nus-cs2103.github.io"
+    }
+    card = format_event_card(event, has_conflict=False)
+    await send_message(user_id, card)
+    ```
+    
+    BEST PRACTICE:
+    - Sanitize inputs to prevent HTML injection
+    - Use emojis for visual appeal
+    - Keep the design clean and scannable
+    """
+    
+    # Extract and sanitize data
+    title = sanitize_html(event_data.get("title", "Untitled Event"))
+    start_time_raw = event_data.get("start_time", "Not specified")
+    end_time_raw = event_data.get("end_time")
+    
+    # Format the datetime for display
+    start_time = format_datetime(start_time_raw) if start_time_raw != "Not specified" else "Not specified"
+    end_time = format_datetime(end_time_raw) if end_time_raw else None
+    
+    # Build the card
+    card = f"<b>Event: {title}</b>\n\n"
+    
+    # Time section
+    card += f"🕒 <i>{start_time}</i>"
+    if end_time:
+        card += f" - <i>{end_time}</i>"
+    card += "\n"
+    
+    # Conflict warning (if applicable)
+    if has_conflict:
+        card += "\n⚠️ <b>CONFLICT DETECTED</b>\n"
+        card += "<i>This event overlaps with another scheduled event.</i>\n"
+    
+    # Web enrichment section
+    web_link = None
+    
+    # Check for web_link (direct link)
+    if "web_link" in event_data and event_data["web_link"]:
+        web_link = event_data["web_link"]
+    
+    # Check for web_enrichment (from agent)
+    elif "web_enrichment" in event_data:
+        enrichment = event_data["web_enrichment"]
+        
+        # Handle string format (legacy)
+        if isinstance(enrichment, str) and "http" in enrichment:
+            # Extract URL from string like "🔗 Found: Title (https://...)"
+            import re
+            match = re.search(r'https?://[^\s\)]+', enrichment)
+            if match:
+                web_link = match.group(0)
+        
+        # Handle dict format (current)
+        elif isinstance(enrichment, dict):
+            web_link = enrichment.get("url")
+    
+    # Add enrichment link if found
+    if web_link:
+        card += f'\n<a href="{web_link}">🔗 More Information</a>\n'
+    
+    return card.strip()
 
 
 async def send_event_confirmation(chat_id: int, event: Event) -> Dict[str, Any]:
@@ -159,6 +341,100 @@ async def send_event_notification(chat_id: int, event: Event) -> Dict[str, Any]:
     """
     formatted_message = format_event_summary(event)
     return await send_message(chat_id, formatted_message)
+
+
+def format_agenda(events: list, date_string: str) -> str:
+    """
+    Format a list of events into a beautiful daily agenda.
+    
+    This is the visual design specification for the /agenda command.
+    Creates a timeline view of the user's day with proper spacing and emojis.
+    
+    Args:
+        events: List of event dictionaries, each containing:
+            - start_time: ISO 8601 timestamp (e.g., "2026-01-18T09:00:00")
+            - title: Event title
+            - location: Event location (can be None)
+            - conflict: Boolean indicating if event has conflicts
+        date_string: The date being displayed (e.g., "2026-01-18")
+        
+    Returns:
+        HTML-formatted string for Telegram
+        
+    Example:
+    ```python
+    events = [
+        {
+            "start_time": "2026-01-18T09:00:00",
+            "title": "CS2103T Lecture",
+            "location": "I3 Auditorium",
+            "conflict": False
+        }
+    ]
+    message = format_agenda(events, "2026-01-18")
+    await send_message(user_id, message)
+    ```
+    
+    DESIGN PRINCIPLES:
+    - Empty state: Celebratory, positive message
+    - Populated state: Clean timeline with visual hierarchy
+    - Scannability: Bold times on left, titles on right
+    - Breathing room: Double newlines between events
+    """
+    
+    # The Empty State - Critical UX
+    if not events or len(events) == 0:
+        return "🎉 <b>No events scheduled for today. Enjoy your free time!</b>"
+    
+    # The Populated State - Build the timeline
+    from datetime import datetime
+    
+    # Parse the date string to make it more readable
+    try:
+        date_obj = datetime.fromisoformat(date_string)
+        formatted_date = date_obj.strftime("%A, %B %d, %Y")  # e.g., "Saturday, January 18, 2026"
+    except:
+        formatted_date = date_string  # Fallback to raw string if parsing fails
+    
+    # The Header - Anchor the eye with emoji and bold date
+    message = f"📅 <b>Your Agenda for {formatted_date}</b>\n\n"
+    
+    # The Loop - Build each event block
+    for event in events:
+        # Extract event data
+        start_time_raw = event.get("start_time", "")
+        title = sanitize_html(event.get("title", "Untitled Event"))
+        location = event.get("location")
+        conflict = event.get("conflict", False)
+        
+        # Format the time - Extract just the time portion (HH:MM)
+        try:
+            dt = datetime.fromisoformat(start_time_raw)
+            time_str = dt.strftime("%H:%M")  # 24-hour format: "09:00", "14:00"
+            # Alternative 12-hour format: dt.strftime("%I:%M %p") -> "09:00 AM", "02:00 PM"
+        except:
+            time_str = "Time TBD"
+        
+        # Build the event block
+        # Line 1: Time (bold) + Title
+        message += f"<b>{time_str}</b> - {title}\n"
+        
+        # Line 2: Location (if it exists)
+        if location:
+            location_clean = sanitize_html(location)
+            message += f"📍 <i>{location_clean}</i>\n"
+        
+        # Line 3: Conflict warning (if applicable)
+        if conflict:
+            message += f"⚠️ <b>CONFLICT</b>\n"
+        
+        # The Separator - Double newline for breathing room
+        message += "\n"
+    
+    # Clean up trailing newline
+    message = message.rstrip("\n")
+    
+    return message
 
 
 # ==============================================================================
