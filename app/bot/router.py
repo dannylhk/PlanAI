@@ -6,13 +6,6 @@ Routes messages to the correct handler based on chat type
 from typing import Dict, Any
 
 
-async def handle_hub_command(text: str, user_id: int):
-    print(f"� HUB: User {user_id} sent private command: {text}")
-    # TODO: Later, we will add Member A's DB logic here
-
-async def handle_group_listener(text: str, chat_id: int):
-    print(f"� LISTENER: Heard '{text}' in Group {chat_id}")
-    # TODO: Later, we will add the "Is this a meeting?" filter here
 async def process_message(clean_data: Dict[str, Any]) -> None:
     """
     The brain of the bot - routes messages to the correct function.
@@ -52,3 +45,42 @@ async def process_message(clean_data: Dict[str, Any]) -> None:
     else:
         # Unknown chat type - this shouldn't happen, but be defensive
         print(f"   ⚠️ WARNING: Unknown chat_type '{chat_type}' - ignoring message")
+
+
+async def handle_hub_command(text: str, user_id: int):
+    """
+    Handler for Master Hub (Private Chat).
+    
+    BEST PRACTICE (Software Engineering):
+    - Start with simple print statements to verify the pipeline works
+    - Add complexity incrementally (don't try to build everything at once)
+    """
+    print(f"\n💬 HUB: User {user_id} sent private command: {text}")
+    # TODO: Later, we will add Member A's DB logic here
+
+
+async def handle_group_listener(text: str, chat_id: int):
+    """
+    STEP 3: Mock Intelligence Filter
+    
+    Instead of expensive LLM calls during development, we use simple keyword matching.
+    This allows rapid testing without burning API credits.
+    
+    BEST PRACTICE (AI Engineering):
+    - Always build a "cheap mock" before connecting expensive APIs
+    - This lets you validate the entire pipeline first
+    - Later, you swap the mock with real AI (same interface, different logic)
+    - This is called "Progressive Enhancement" in product development
+    """
+    print(f"\n👂 LISTENER: Heard '{text}' in Group {chat_id}")
+    
+    # Mock Event Detection (Simple keyword matching)
+    # Later: This will be replaced with Member A's is_event_intent() LLM call
+    is_meeting = "meet" in text.lower()
+    
+    if is_meeting:
+        print("   ✅ Event Detected! Asking for confirmation...")
+        # TODO Phase 2: Call Member A's extract_datetime_from_text()
+        # TODO Phase 2: Send confirmation message to group
+    else:
+        print("   ⏭️  Ignoring noise (not an event)...")
