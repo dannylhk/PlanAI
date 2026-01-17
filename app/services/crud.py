@@ -27,8 +27,7 @@ async def get_events_by_date(user_id: int, date_str: str) -> list:
         date_str: YYYY-MM-DD format
     """
     try:
-        # Create Start (00:00) and End (23:59) timestamps for the query
-        # Assuming date_str is "2026-01-18"
+
         start_of_day = f"{date_str}T00:00:00"
         end_of_day = f"{date_str}T23:59:59"
         
@@ -64,12 +63,10 @@ async def update_event(event_id: int, updates: dict):
     # 2. Conflict Check (Only if time is being updated)
     if "start_time" in clean_updates:
         start = clean_updates["start_time"]
-        # Default to 1 hour after start if end_time isn't explicitly updated
         end = clean_updates.get("end_time")
         
         if end:
             conflicts = await check_conflicts(start, end)
-            # Filter out the current event itself from the conflict list
             conflicts = [c for c in conflicts if c.get('id') != event_id]
             
             if conflicts:
@@ -81,7 +78,6 @@ async def update_event(event_id: int, updates: dict):
 
     # 3. Perform the Update
     try:
-        # Note: 'id' is the primary key in the events table
         response = supabase.table("events").update(clean_updates).eq("id", event_id).execute()
         
         if response.data:
@@ -100,7 +96,6 @@ async def save_event_to_db(event_data: Event, user_id: int = None):
     """
     payload = event_data.model_dump(mode='json')
     
-    # Inject user_id if provided
     if user_id:
         payload["user_id"] = user_id
 
@@ -119,4 +114,56 @@ async def save_event_to_db(event_data: Event, user_id: int = None):
         return {"status": "success", "data": response.data[0] if response.data else {}}
     except Exception as e:
         print(f" Save Error: {e}")
+        return {"status": "error", "message": str(e)}
+    
+async def get_users_with_events_for_date(date_str: str) -> list:
+    """
+    Finds all unique user_ids that have at least one event on the target date.
+    Args:
+        date_str: YYYY-MM-DD format (usually today + 1 day)
+    """
+    start_of_day = f"{date_str}T00:00:00"
+    end_of_day = f"{date_str}T23:59:59"
+
+    try:
+        response = supabase.table("events").select("user_id")\
+            .gte("start_time", start_of_day)\
+            .lte("start_time", end_of_day)\
+            .execute()
+        
+        if response.data:
+            unique_users = list(set(u['user_id'] for u in response.data if u['user_id']))
+            return unique_users
+        return []
+        
+    except Exception as e:
+        print(f"⚠️ Batch User Query Error: {e}")
+        return []
+
+# app/services/crud.py
+
+async def save_scavenged_events_batch(events: list[Event], user_id: int):
+    """
+    Architected for Phase 6. Efficiently saves multiple scavenged events.
+    """
+    if not events:
+        return {"status": "ignored", "message": "No events to save."}
+
+    # Convert all Pydantic models to dicts and inject user_id
+    payloads = []
+    for e in events:
+        data = e.model_dump(mode='json')
+        data["user_id"] = user_id
+        # Source is explicitly set to web_scavenge by the agent
+        payloads.append(data)
+
+    try:
+        # Supabase .insert() accepts a list for bulk insertion
+        response = supabase.table("events").insert(payloads).execute()
+        return {
+            "status": "success", 
+            "count": len(response.data) if response.data else 0
+        }
+    except Exception as e:
+        print(f"⚠️ Batch Save Error: {e}")
         return {"status": "error", "message": str(e)}
