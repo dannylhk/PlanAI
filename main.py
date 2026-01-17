@@ -1,5 +1,9 @@
 from fastapi import FastAPI
 from app.api import webhook
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 app = FastAPI()
 

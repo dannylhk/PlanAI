@@ -2,8 +2,10 @@
 Bot Router - The Brain (Member B)
 Routes messages to the correct handler based on chat type
 """
-
 from typing import Dict, Any
+from app.core.llm import extract_event_from_text, check_event_intent
+from app.bot.responses import format_event_confirmation, send_message
+
 
 
 async def process_message(clean_data: Dict[str, Any]) -> None:
@@ -65,22 +67,41 @@ async def handle_group_listener(text: str, chat_id: int):
     
     Instead of expensive LLM calls during development, we use simple keyword matching.
     This allows rapid testing without burning API credits.
-    
-    BEST PRACTICE (AI Engineering):
-    - Always build a "cheap mock" before connecting expensive APIs
-    - This lets you validate the entire pipeline first
-    - Later, you swap the mock with real AI (same interface, different logic)
-    - This is called "Progressive Enhancement" in product development
+
     """
+
     print(f"\n👂 LISTENER: Heard '{text}' in Group {chat_id}")
     
     # Mock Event Detection (Simple keyword matching)
     # Later: This will be replaced with Member A's is_event_intent() LLM call
-    is_meeting = "meet" in text.lower()
+    is_meeting = await check_event_intent(text)  # FIX: Added 'await'
     
     if is_meeting:
         print("   ✅ Event Detected! Asking for confirmation...")
-        # TODO Phase 2: Call Member A's extract_datetime_from_text()
-        # TODO Phase 2: Send confirmation message to group
+        
+        # Call Member A's extract_datetime_from_text()
+        confirmed_event = await extract_event_from_text(text)
+        
+        # DEFENSIVE PROGRAMMING: Check if extraction was successful
+        if confirmed_event is None:
+            print("   ❌ ERROR: Failed to extract event details (Member A's function returned None)")
+            print("   → This might be due to:")
+            print("      - Gemini API error (check Member A's code)")
+            print("      - Invalid text format")
+            print("      - Missing API key")
+            # Don't crash - just return gracefully
+            return
+        
+        # Format the text nicely
+        confirmed_msg = format_event_confirmation(confirmed_event)
+        
+        # Send it to Telegram
+        result = await send_message(chat_id, confirmed_msg)
+        
+        if result.get("ok"):
+            print(f"   ✅ Confirmation message sent successfully!")
+        else:
+            print(f"   ❌ Failed to send message: {result.get('error')}")
+
     else:
         print("   ⏭️  Ignoring noise (not an event)...")
