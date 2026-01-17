@@ -182,17 +182,28 @@ async def get_users_with_events_for_date(date_str: str) -> list:
 
 async def save_scavenged_events_batch(events: list[Event], user_id: int):
     """
-    Architected for Phase 6. Efficiently saves multiple scavenged events.
+    Phase 6: Batch-saves scavenged events to database.
+    
+    This function efficiently saves multiple events in a single database call.
+    All events are marked with source="web_scavenge" to differentiate from
+    chat-extracted events.
+    
+    Args:
+        events: List of Event Pydantic models from scavenge_events()
+        user_id: The Telegram user ID to associate events with
+        
+    Returns:
+        dict with status: "success", "ignored", or "error"
     """
     if not events:
         return {"status": "ignored", "message": "No events to save."}
 
-    # Convert all Pydantic models to dicts and inject user_id
+    # Convert all Pydantic models to dicts and inject user_id + source
     payloads = []
     for e in events:
         data = e.model_dump(mode='json')
         data["user_id"] = user_id
-        # Source is explicitly set to web_scavenge by the agent
+        data["source"] = "web_scavenge"  # Ensure source is set for schema handshake
         payloads.append(data)
 
     try:
