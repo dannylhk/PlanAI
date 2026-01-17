@@ -6,7 +6,6 @@ from app.schemas.event import Event
 
 load_dotenv()
 
-# Graceful degradation: If no key, just return the event as-is
 try:
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 except:
@@ -30,10 +29,8 @@ async def enrich_event(event: Event) -> Event:
         
         if response['results']:
             top_result = response['results'][0]
-            # Enriched!
             event.web_enrichment = f"🔗 Found: {top_result['title']} ({top_result['url']})"
             
-            # If we didn't have a location, maybe the search gave us one?
             if not event.location:
                 event.location = top_result['url']
                 

@@ -4,3 +4,5 @@ uvicorn
 pydantic
 python-dotenv
 tavily-python
+supabase
+google-genai

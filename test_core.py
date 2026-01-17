@@ -9,7 +9,6 @@ async def main():
     
     print(f"🤖 Brain: Processing '{text}'...")
     
-    # 1. EXTRACT (Gemini 2.5)
     event = await extract_event_from_text(text)
     
     if event:
