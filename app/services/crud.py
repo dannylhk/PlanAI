@@ -4,16 +4,33 @@ from app.services.db import supabase
 from app.schemas.event import Event
 
 
-async def check_conflicts(start_time: str, end_time: str) -> list:
+async def check_conflicts(start_time: str, end_time: str, user_id: int = None) -> list:
     """
-    Checks if a proposed time slot overlaps with existing events.
+    Checks if a proposed time slot overlaps with existing events for a specific user.
+    
+    Args:
+        start_time: ISO 8601 start time
+        end_time: ISO 8601 end time
+        user_id: User ID to check conflicts for (optional, but recommended)
+    
+    Returns:
+        List of conflicting events
     """
     try:
-        response = supabase.table("events").select("*").filter(
+        query = supabase.table("events").select("*")
+        
+        # Filter by user_id if provided (important to avoid cross-user conflicts)
+        if user_id:
+            query = query.eq("user_id", user_id)
+        
+        # Check for time overlap using standard interval logic:
+        # Events overlap if: start1 < end2 AND end1 > start2
+        response = query.filter(
             "start_time", "lt", end_time
         ).filter(
             "end_time", "gt", start_time
         ).execute()
+        
         return response.data
     except Exception as e:
         print(f"⚠️ Conflict Check Error: {e}")
@@ -83,7 +100,11 @@ async def update_event(event_id: int, updates: dict):
         end = clean_updates.get("end_time")
         
         if end:
-            conflicts = await check_conflicts(start, end)
+            # Get the user_id from the existing event for conflict checking
+            existing_event = await get_event_by_id(event_id)
+            user_id = existing_event.get("user_id") if existing_event else None
+            
+            conflicts = await check_conflicts(start, end, user_id)
             conflicts = [c for c in conflicts if c.get('id') != event_id]
             
             if conflicts:
@@ -116,8 +137,8 @@ async def save_event_to_db(event_data: Event, user_id: int = None):
     if user_id:
         payload["user_id"] = user_id
 
-    # Conflict Check
-    conflicts = await check_conflicts(payload["start_time"], payload["end_time"])
+    # Conflict Check - pass user_id to only check conflicts for this specific user
+    conflicts = await check_conflicts(payload["start_time"], payload["end_time"], user_id)
     
     if conflicts:
         return {
