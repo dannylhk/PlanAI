@@ -46,3 +46,6 @@ async def save_event_to_db(event_data: Event):
     except Exception as e:
         print(f" Save Error: {e}")
         return {"status": "error", "message": str(e)}
+    
+def get_events_by_date():
+    pass
