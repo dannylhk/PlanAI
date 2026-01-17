@@ -13,42 +13,15 @@ client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 MODEL_ID = "gemini-2.5-flash-lite"
 
-# Helper Schema for Intent Check
-class IntentResponse(BaseModel):
-    is_event_intent: bool
-
-# The Intent Filter (Fast & Cheap)
-# async def check_event_intent(text: str) -> bool:
-#     """
-#     Determines if a message contains a plan/event intent.
-#     Used by Member B to filter noise.
-#     """
-#     try:
-#         response = client.models.generate_content(
-#             model=MODEL_ID,
-#             contents=f"Analyze this chat message: '{text}'. \nDoes this message explicitly propose a specific plan, event, or meeting with a time or date? Return true only if it's a potential event.",
-#             config={
-#                 "response_mime_type": "application/json",
-#                 "response_schema": IntentResponse,
-#             },
-#         )
-#         return response.parsed.is_event_intent
-#     except Exception as e:
-#         print(f"⚠️ Intent Check Error: {e}")
-#         return False
-# In app/core/llm.py - Replace the async function
 def check_event_intent(text: str) -> bool:
     """Simple keyword-based intent check (no API call)"""
     event_keywords = ["meet", "meeting", "event", "class", "lecture", 
                       "dinner", "lunch", "tomorrow", "today", "next", 
-                      "at", "pm", "am", "friday", "monday"]
+                      "at", "pm", "am", "friday", "monday", "schedule"]
     
     text_lower = text.lower()
     return any(keyword in text_lower for keyword in event_keywords)
 
-    
-
-# Extracttor
 async def extract_event_from_text(text: str) -> Event | None:
     try:
         response = client.models.generate_content(
@@ -61,22 +34,30 @@ async def extract_event_from_text(text: str) -> Event | None:
         )
         event = response.parsed 
 
-    # --- NEW LOGIC: DEFAULT 1 HOUR DURATION ---
-        if event.start_time and not event.end_time:
-            try:
-                # 1. Parse the string into a datetime object
-                start_dt = datetime.fromisoformat(event.start_time)
+        if not event:
+            return None
+
+        # --- VALIDATION: PAST EVENT BLOCKER ---
+        try:
+            start_dt = datetime.fromisoformat(event.start_time)
+            now = datetime.now()
+            
+            # If event is in the past (with 5 min buffer for latency), reject it
+            if start_dt < (now - timedelta(minutes=5)):
+                print(f"   🚫 Blocked past event: {event.start_time} < {now}")
+                return None
                 
-                # 2. Add 1 hour
+            # --- DEFAULT DURATION LOGIC ---
+            if not event.end_time:
+                # Add 1 hour default
                 end_dt = start_dt + timedelta(hours=1)
-                
-                # 3. Convert back to ISO string
                 event.end_time = end_dt.isoformat()
-                
                 print(f"   🕒 Added default end time: {event.end_time}")
-            except ValueError:
-                print("   ⚠️ Could not parse start_time to calculate duration")
-        # ------------------------------------------
+                
+        except ValueError:
+            print("   ⚠️ Date parsing error during validation")
+            # We proceed; let the DB handle strict format errors if needed
+            
         return event
     
     except Exception as e:
