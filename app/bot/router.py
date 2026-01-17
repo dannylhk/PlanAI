@@ -3,9 +3,19 @@ Bot Router - The Brain (Member B)
 Routes messages to the correct handler based on chat type
 """
 from typing import Dict, Any
-from app.core.llm import extract_event_from_text, check_event_intent
+from app.core.llm import extract_event_from_text, check_event_intent, detect_update_intent
 from app.bot.responses import format_event_confirmation, send_message
 from app.bot.date_utils import format_datetime
+
+# ============================================================================
+# PHASE 5: IN-MEMORY CONTEXT STORE (Short-Term Memory)
+# ============================================================================
+# chat_context structure:
+# {
+#     chat_id (int): event_id (int)
+# }
+# This tracks the last successfully confirmed event in each group chat.
+chat_context: Dict[int, int] = {}
 
 # MOCK DATA for Phase 3 Testing
 # mock_enriched_event = {
@@ -138,62 +148,222 @@ async def handle_hub_command(text: str, user_id: int):
 
 async def handle_group_listener(text: str, chat_id: int, user_id: int):
     """
-    Phase 2: Group Listener
+    Phase 5: Group Listener with Statefulness
     
     Flow:
-    1. Check if message contains event intent
-    2. Extract event details using Member A's function
-    3. Check for conflicts and save to database
-    4. Send notification to user's private chat:
-       - Success: Event saved with confirmation
-       - Conflict: Event rejected with conflict details
+    1. Check if message contains event intent (time-related keywords)
+    2. If there is previous context for this group:
+       - Check if this is an update to the previous event
+       - If yes, handle update confirmation flow
+    3. If no context OR not an update:
+       - Create new event and save to database
+       - Store event ID in chat_context for future updates
     
     Args:
         text: The message text
-        chat_id: The group chat ID (for logging)
+        chat_id: The group chat ID (for context lookup)
         user_id: The user's ID (to send private notification)
     """
-
+    global chat_context
+    
     print(f"\n👂 LISTENER: Heard '{text}' in Group {chat_id} from User {user_id}")
     
-    # Step 1: Check if this message contains an event intent
-    # Note: check_event_intent is now a synchronous keyword-based function (no await needed)
+    # ========================================================================
+    # STEP 1: Check if this is time-related (event intent)
+    # ========================================================================
     is_event = check_event_intent(text)
     
     if not is_event:
-        print("   ⏭️  Ignoring noise (not an event)...")
+        print("   ⏭️  Ignoring noise (not time-related)...")
         return
     
-    print("   ✅ Event Detected! Extracting details...")
+    print("   ✅ Time-related message detected!")
     
-    # Step 2: Extract event details using Member A's LLM function
+    # ========================================================================
+    # STEP 2: Check if there is previous context for this group
+    # ========================================================================
+    if chat_id in chat_context:
+        print(f"   🧠 Memory found! Last event ID: {chat_context[chat_id]}")
+        
+        # Retrieve the previous event from database
+        from app.services.crud import get_event_by_id
+        previous_event = await get_event_by_id(chat_context[chat_id])
+        
+        if previous_event:
+            print(f"   📋 Previous event: {previous_event.get('title')} at {previous_event.get('start_time')}")
+            
+            # Check if this message is trying to update the previous event
+            update_analysis = await detect_update_intent(text, previous_event)
+            
+            if update_analysis.is_update:
+                print("   🔄 UPDATE INTENT DETECTED!")
+                # Handle update confirmation flow
+                await handle_update_confirmation(user_id, chat_id, previous_event, update_analysis, text)
+                return
+            else:
+                print("   ➕ Not an update - treating as new event")
+        else:
+            print("   ⚠️ Previous event not found in database - treating as new event")
+    else:
+        print("   🆕 No previous context for this group")
+    
+    # ========================================================================
+    # STEP 3: Create new event (no context OR not an update)
+    # ========================================================================
+    print("   🆕 Creating new event...")
+    
     event = await extract_event_from_text(text)
     
-    # DEFENSIVE PROGRAMMING: Check if extraction was successful
     if event is None:
         print("   ❌ ERROR: Failed to extract event details")
         return
     
     print(f"   📅 Extracted Event: {event.title} at {event.start_time}")
     
-    # Step 3: Try to save to database (checks for conflicts internally)
+    # Save to database
     from app.services.crud import save_event_to_db
+    save_result = await save_event_to_db(event, user_id=user_id)
     
-    save_result = await save_event_to_db(event)
-    
-    # Step 4: Send notification to user's private chat based on result
+    # Handle save result
     if save_result["status"] == "success":
-        print("   ✅ Event saved successfully! Notifying user...")
+        print("   ✅ Event saved successfully!")
+        
+        # CRITICAL: Save event ID to chat_context for future updates
+        event_id = save_result["data"].get("id")
+        if event_id:
+            chat_context[chat_id] = event_id
+            print(f"   🧠 Stored event ID {event_id} in chat_context for group {chat_id}")
+        
         await send_success_notification(user_id, event)
         
     elif save_result["status"] == "conflict":
         print(f"   ⚠️  CONFLICT DETECTED: {save_result['message']}")
-        print("   ❌ Event NOT saved. Sending rejection notice...")
         await send_conflict_notification(user_id, event, save_result)
         
     else:
         print(f"   ❌ Database error: {save_result.get('message')}")
         await send_error_notification(user_id, event, save_result.get('message'))
+
+
+async def handle_update_confirmation(user_id: int, chat_id: int, previous_event: dict, update_analysis, original_text: str):
+    """
+    Handle the update confirmation flow.
+    
+    Sends a message to the user asking for confirmation of the detected update.
+    
+    NOTE: In a full implementation, this would use Telegram inline keyboard buttons
+    or wait for a confirmation response. For the hackathon, we'll auto-apply updates
+    with a clear notification.
+    
+    Args:
+        user_id: The user's Telegram ID
+        chat_id: The group chat ID
+        previous_event: The previous event data from database
+        update_analysis: UpdateAnalysis from detect_update_intent
+        original_text: The original message text
+    """
+    from app.bot.responses import send_message
+    from app.services.crud import update_event
+    
+    print(f"\n🔄 HANDLING UPDATE CONFIRMATION for event {previous_event.get('id')}")
+    
+    # Build the update dictionary from the analysis
+    updates = {}
+    changes_text = []
+    
+    if update_analysis.new_start_time:
+        updates["start_time"] = update_analysis.new_start_time
+        old_time = format_datetime(previous_event.get('start_time', 'N/A'))
+        new_time = format_datetime(update_analysis.new_start_time)
+        changes_text.append(f"⏰ Time: {old_time} → {new_time}")
+    
+    if update_analysis.new_location:
+        updates["location"] = update_analysis.new_location
+        old_loc = previous_event.get('location', 'Not specified')
+        changes_text.append(f"📍 Location: {old_loc} → {update_analysis.new_location}")
+    
+    if update_analysis.new_title:
+        updates["title"] = update_analysis.new_title
+        old_title = previous_event.get('title', 'Untitled')
+        changes_text.append(f"📝 Title: {old_title} → {update_analysis.new_title}")
+    
+    if not updates:
+        print("   ⚠️ Update detected but no fields to change")
+        message = f"""
+🤔 <b>Update Detected</b>
+
+I noticed you might be updating:
+<b>{previous_event.get('title', 'Your event')}</b>
+
+But I couldn't determine what to change. Please be more specific!
+
+<i>Your message: "{original_text}"</i>
+        """.strip()
+        await send_message(user_id, message)
+        return
+    
+    # Perform the update
+    print(f"   📝 Applying updates: {updates}")
+    update_result = await update_event(previous_event.get('id'), updates)
+    
+    if update_result["status"] == "success":
+        print("   ✅ Event updated successfully!")
+        
+        changes_list = "\n".join(changes_text)
+        message = f"""
+✅ <b>Event Updated!</b>
+
+<b>{update_result['data'].get('title', 'Your event')}</b>
+
+<b>Changes applied:</b>
+{changes_list}
+
+<i>Original message: "{original_text}"</i>
+        """.strip()
+        
+        await send_message(user_id, message)
+        
+    elif update_result["status"] == "conflict":
+        print(f"   ⚠️ UPDATE CONFLICT: {update_result['message']}")
+        
+        changes_list = "\n".join(changes_text)
+        conflicting_events = update_result.get("conflicting_events", [])
+        
+        conflict_details = ""
+        for idx, conflict in enumerate(conflicting_events[:3], 1):
+            start_time_raw = conflict.get('start_time', 'N/A')
+            start_time_formatted = format_datetime(start_time_raw) if start_time_raw != 'N/A' else 'N/A'
+            conflict_details += f"\n{idx}. {conflict.get('title', 'Untitled')} ({start_time_formatted})"
+        
+        message = f"""
+⚠️ <b>Update Failed - Conflict Detected</b>
+
+<b>{previous_event.get('title', 'Your event')}</b>
+
+<b>Attempted changes:</b>
+{changes_list}
+
+<b>Conflicts with:</b>
+{conflict_details}
+
+💡 <i>The event was NOT updated. Please choose a different time.</i>
+        """.strip()
+        
+        await send_message(user_id, message)
+        
+    else:
+        print(f"   ❌ Update error: {update_result.get('message')}")
+        message = f"""
+❌ <b>Update Failed</b>
+
+Could not update: <b>{previous_event.get('title', 'Your event')}</b>
+
+<b>Error:</b> {update_result.get('message', 'Unknown error')}
+
+Please try again later.
+        """.strip()
+        
+        await send_message(user_id, message)
 
 
 async def send_success_notification(user_id: int, event):
