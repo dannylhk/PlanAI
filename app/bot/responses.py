@@ -26,7 +26,10 @@ async def send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> Dic
         parse_mode: "HTML" or "Markdown" for formatting
         
     Returns:
-        The response from Telegram API
+        The response from Telegram API containing:
+        - ok: True if successful
+        - result.message_id: The ID of the sent message (use for editing)
+        - error: Error message if failed
         
     BEST PRACTICE:
     - Always use async for network calls (non-blocking)
@@ -43,10 +46,67 @@ async def send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> Dic
     
     try:
         async with httpx.AsyncClient() as client:
+            # httpx makes HTTP POST request to Telegram
+            response = await client.post(url, json=payload, timeout=10.0)
+            return response.json()
+        # in the JSON format, tele always send the structure of {"ok", "result"}
+    except Exception as e:
+        print(f"❌ Error sending message to Telegram: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+async def edit_message(chat_id: int, message_id: int, new_text: str, parse_mode: str = "HTML") -> Dict[str, Any]:
+    """
+    Edit an existing message in a Telegram chat.
+    
+    This is the key function for the "Async UI" pattern:
+    1. Send a loading message with send_message() → get message_id
+    2. Process in background (LLM, enrichment, DB)
+    3. Edit the loading message with this function → show final result
+    
+    Args:
+        chat_id: The chat ID where the message was sent
+        message_id: The ID of the message to edit (from send_message response)
+        new_text: The new text to replace the original message
+        parse_mode: "HTML" or "Markdown" for formatting
+        
+    Returns:
+        The response from Telegram API
+        
+    Example usage:
+    ```python
+    # Step 1: Send loading message
+    response = await send_message(user_id, "🔍 Searching for venue...")
+    message_id = response["result"]["message_id"]
+    
+    # Step 2: Do heavy processing
+    enriched_event = await enrich_event(event)
+    
+    # Step 3: Replace loading message with final result
+    final_text = format_event_summary(enriched_event)
+    await edit_message(user_id, message_id, final_text)
+    ```
+    
+    BEST PRACTICE:
+    - Always check if send_message was successful before trying to edit
+    - Use this to prevent user from thinking bot is frozen
+    - Show progress: "🔍 Searching..." → "✅ Found event!"
+    """
+    url = f"{TELEGRAM_API_URL}/editMessageText"
+    
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": new_text,
+        "parse_mode": parse_mode
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, timeout=10.0)
             return response.json()
     except Exception as e:
-        print(f"❌ Error sending message to Telegram: {e}")
+        print(f"❌ Error editing message on Telegram: {e}")
         return {"ok": False, "error": str(e)}
 
 
@@ -122,6 +182,120 @@ def format_event_summary(event: Event) -> str:
                 message += f"\n• {summary}"
     
     return message
+
+
+def sanitize_html(text: str) -> str:
+    """
+    Sanitize text for Telegram HTML formatting.
+    
+    Telegram's HTML parser is strict about certain characters.
+    This prevents breaking the message formatting.
+    
+    Args:
+        text: The text to sanitize
+        
+    Returns:
+        Sanitized text safe for Telegram HTML
+        
+    Note: For hackathon/MVP, basic escaping is sufficient.
+    Production apps should use more robust sanitization.
+    """
+    if not text:
+        return ""
+    
+    # Escape special HTML characters
+    text = text.replace("&", "&amp;")  # Must be first!
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    
+    return text
+
+
+def format_event_card(event_data: Dict[str, Any], has_conflict: bool = False) -> str:
+    """
+    Format an event as a "Perfect Card" with HTML styling.
+    
+    This is the Phase 3 specification for displaying events with:
+    - Clean header with event title
+    - Time information with emoji
+    - Web enrichment links (if available)
+    - Conflict warnings (if detected)
+    
+    Args:
+        event_data: Dictionary containing event information:
+            - title: Event title (required)
+            - start_time: ISO 8601 start time (required)
+            - end_time: ISO 8601 end time (optional)
+            - web_link or web_enrichment: URL for additional info (optional)
+        has_conflict: Whether this event conflicts with existing events
+        
+    Returns:
+        HTML-formatted string for Telegram
+        
+    Example:
+    ```python
+    event = {
+        "title": "CS2103 Lecture",
+        "start_time": "2026-01-24T14:00:00",
+        "web_link": "https://nus-cs2103.github.io"
+    }
+    card = format_event_card(event, has_conflict=False)
+    await send_message(user_id, card)
+    ```
+    
+    BEST PRACTICE:
+    - Sanitize inputs to prevent HTML injection
+    - Use emojis for visual appeal
+    - Keep the design clean and scannable
+    """
+    
+    # Extract and sanitize data
+    title = sanitize_html(event_data.get("title", "Untitled Event"))
+    start_time = event_data.get("start_time", "Not specified")
+    end_time = event_data.get("end_time")
+    
+    # Build the card
+    card = f"<b>Event: {title}</b>\n\n"
+    
+    # Time section
+    card += f"🕒 <i>{start_time}</i>"
+    if end_time:
+        card += f" - <i>{end_time}</i>"
+    card += "\n"
+    
+    # Conflict warning (if applicable)
+    if has_conflict:
+        card += "\n⚠️ <b>CONFLICT DETECTED</b>\n"
+        card += "<i>This event overlaps with another scheduled event.</i>\n"
+    
+    # Web enrichment section
+    web_link = None
+    
+    # Check for web_link (direct link)
+    if "web_link" in event_data and event_data["web_link"]:
+        web_link = event_data["web_link"]
+    
+    # Check for web_enrichment (from agent)
+    elif "web_enrichment" in event_data:
+        enrichment = event_data["web_enrichment"]
+        
+        # Handle string format (legacy)
+        if isinstance(enrichment, str) and "http" in enrichment:
+            # Extract URL from string like "🔗 Found: Title (https://...)"
+            import re
+            match = re.search(r'https?://[^\s\)]+', enrichment)
+            if match:
+                web_link = match.group(0)
+        
+        # Handle dict format (current)
+        elif isinstance(enrichment, dict):
+            web_link = enrichment.get("url")
+    
+    # Add enrichment link if found
+    if web_link:
+        card += f'\n<a href="{web_link}">🔗 More Information</a>\n'
+    
+    return card.strip()
 
 
 async def send_event_confirmation(chat_id: int, event: Event) -> Dict[str, Any]:
