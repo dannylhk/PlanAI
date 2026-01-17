@@ -5,6 +5,7 @@ Routes messages to the correct handler based on chat type
 from typing import Dict, Any
 from app.core.llm import extract_event_from_text, check_event_intent
 from app.bot.responses import format_event_confirmation, send_message
+from app.bot.date_utils import format_datetime
 
 # MOCK DATA for Phase 3 Testing
 # mock_enriched_event = {
@@ -63,12 +64,76 @@ async def handle_hub_command(text: str, user_id: int):
     """
     Handler for Master Hub (Private Chat).
     
+    Supports:
+    - /agenda: Show user's schedule for today
+    - Natural language: "what is my plan today?"
+    
     BEST PRACTICE (Software Engineering):
     - Start with simple print statements to verify the pipeline works
     - Add complexity incrementally (don't try to build everything at once)
     """
     print(f"\n💬 HUB: User {user_id} sent private command: {text}")
-    # TODO: Later, we will add Member A's DB logic here
+    
+    # Step A: Input Normalization
+    # Convert to lowercase and strip whitespace for consistent matching
+    normalized_text = text.lower().strip()
+    
+    # Step B: The Guard Clause - Check for /agenda command
+    # Support both strict command (/agenda) and natural language variants
+    if normalized_text == "/agenda" or "my plan" in normalized_text:
+        print("   📅 /agenda command detected")
+        
+        # Step C: The Date Context
+        # Generate today's date in ISO 8601 format (YYYY-MM-DD) for Singapore timezone
+        from datetime import datetime
+        import pytz
+        
+        singapore_tz = pytz.timezone('Asia/Singapore')
+        today = datetime.now(singapore_tz)
+        date_string = today.strftime("%Y-%m-%d")
+        
+        print(f"   📆 Fetching events for: {date_string}")
+        
+        # Step D: The Data Retrieval (Mock for now)
+        # TODO: Replace with: from app.services.crud import get_events_by_date
+        # TODO: events = await get_events_by_date(user_id, date_string)
+        
+        # Mock data - realistic schedule for testing
+        events = [
+            {
+                "start_time": "2026-01-18T09:00:00",
+                "title": "CS2103T Lecture",
+                "location": "I3 Auditorium",
+                "conflict": False
+            },
+            {
+                "start_time": "2026-01-18T14:00:00",
+                "title": "Team Meeting",
+                "location": "COM1-0210",
+                "conflict": False
+            },
+            {
+                "start_time": "2026-01-18T16:00:00",
+                "title": "Gym Session",
+                "location": None,  # Test null location handling
+                "conflict": False
+            }
+        ]
+        
+        # For testing empty state, uncomment this:
+        # events = []
+        
+        # Step E: Dispatch - Format and send the agenda
+        from app.bot.responses import format_agenda, send_message
+        
+        agenda_message = format_agenda(events, date_string)
+        await send_message(user_id, agenda_message)
+        
+        print("   ✅ Agenda sent to user")
+        return
+    
+    # If not a recognized command, just log it for now
+    print("   ⏭️  No command matched, ignoring...")
 
 
 async def handle_group_listener(text: str, chat_id: int, user_id: int):
@@ -208,7 +273,9 @@ async def send_conflict_notification(user_id: int, event, conflict_info):
     # Add details about the conflicting events
     conflict_details = f"\n\n<b>Conflicting with:</b>"
     for idx, conflict in enumerate(conflicting_events[:3], 1):
-        conflict_details += f"\n{idx}. {conflict.get('title', 'Untitled')} ({conflict.get('start_time', 'N/A')})"
+        start_time_raw = conflict.get('start_time', 'N/A')
+        start_time_formatted = format_datetime(start_time_raw) if start_time_raw != 'N/A' else 'N/A'
+        conflict_details += f"\n{idx}. {conflict.get('title', 'Untitled')} ({start_time_formatted})"
     
     conflict_details += "\n\n💡 <i>Please choose a different time or cancel one of the conflicting events.</i>"
     
