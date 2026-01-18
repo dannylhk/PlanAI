@@ -578,10 +578,10 @@ PlanAI/
 
 ## 👥 Contributors
 
-| Role         | Responsibility                                      |
-| ------------ | --------------------------------------------------- |
-| **Member A** | LLM Integration, Web Research Agent, Database Layer |
-| **Member B** | Bot UX, Message Routing, Telegram Integration       |
+| Role         | Responsibility                                                |
+| ------------ | --------------------------------------------------------------|
+| **Member A** | LLM Integration, Web Research Agent, Database Layer           |
+| **Member B** | Bot UX, Message Routing, Telegram Integration, LLM Integration|
 
 ---
 
