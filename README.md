@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status">
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python">
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688" alt="FastAPI">
-  <img src="https://img.shields.io/badge/AI-Gemini%202.5-orange" alt="Gemini">
+  <img src="https://img.shields.io/badge/AI-OpenAI%20GPT--4o-412991" alt="OpenAI">
   <img src="https://img.shields.io/badge/Platform-Telegram-0088cc" alt="Telegram">
 </p>
 
@@ -237,7 +237,7 @@ When you add an event, PlanAI searches the web for relevant information:
              │                                   │
              ▼                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                        AI Layer (Gemini 2.5)                    │
+│                      AI Layer (OpenAI GPT-4o)                   │
 │                      (app/core/llm.py)                          │
 │                                                                 │
 │   • extract_event_from_text() - Natural language → Event       │
@@ -273,7 +273,7 @@ When you add an event, PlanAI searches the web for relevant information:
 
 - Python 3.10+
 - Telegram Bot Token (from [@BotFather](https://t.me/botfather))
-- Google Gemini API Key
+- OpenAI API Key
 - Supabase Project (free tier works!)
 - Tavily API Key (for web search)
 
@@ -298,7 +298,7 @@ Create a `.env` file in the project root:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-GOOGLE_API_KEY=your_gemini_api_key
+OPENAI_API_KEY=your_openai_api_key
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
 TAVILY_API_KEY=your_tavily_api_key
@@ -467,7 +467,7 @@ PlanAI/
 │   │   └── utils.py        # Helper functions
 │   │
 │   ├── core/
-│   │   ├── llm.py          # Gemini AI integration
+│   │   ├── llm.py          # OpenAI GPT-4o integration
 │   │   ├── agent.py        # Web search agent (Tavily)
 │   │   └── prompts.py      # LLM system prompts
 │   │
@@ -490,16 +490,16 @@ PlanAI/
 
 ## 🛠️ Technologies
 
-| Technology            | Purpose                              |
-| --------------------- | ------------------------------------ |
-| **FastAPI**           | High-performance async web framework |
-| **Telegram Bot API**  | User interface via httpx             |
-| **Google Gemini 2.5** | Natural language understanding       |
-| **Tavily**            | Web search for deadline research     |
-| **Supabase**          | PostgreSQL database with real-time   |
-| **APScheduler**       | Cron jobs for nightly briefings      |
-| **Pydantic**          | Data validation & schemas            |
-| **pytz**              | Singapore timezone handling          |
+| Technology           | Purpose                              |
+| -------------------- | ------------------------------------ |
+| **FastAPI**          | High-performance async web framework |
+| **Telegram Bot API** | User interface via httpx             |
+| **OpenAI GPT-4o**    | Natural language understanding       |
+| **Tavily**           | Web search for deadline research     |
+| **Supabase**         | PostgreSQL database with real-time   |
+| **APScheduler**      | Cron jobs for nightly briefings      |
+| **Pydantic**         | Data validation & schemas            |
+| **pytz**             | Singapore timezone handling          |
 
 ---
 

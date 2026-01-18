@@ -1,17 +1,19 @@
 # app/core/llm.py
 import os
 from datetime import datetime, timedelta
-from google import genai
+from openai import AsyncOpenAI  # Use AsyncOpenAI for async functions
 from pydantic import BaseModel, Field
 from app.schemas.event import Event
-from app.core.prompts import SYSTEM_PROMPT
+from app.core.prompts import get_system_prompt
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+# Initialize Async OpenAI Client
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-MODEL_ID = "gemini-2.5-flash-lite"
+# Use a standard OpenAI model ID
+MODEL_ID = "gpt-4o"
 
 def check_event_intent(text: str) -> bool:
     """
@@ -29,16 +31,20 @@ def check_event_intent(text: str) -> bool:
 
 async def extract_event_from_text(text: str) -> Event | None:
     try:
-        response = client.models.generate_content(
-            model=MODEL_ID, 
-            contents=f"{SYSTEM_PROMPT}\n\nUSER MESSAGE:\n{text}",
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": Event,
-            },
+        # Get fresh system prompt with current date (dynamic, not static import)
+        system_prompt = get_system_prompt()
+        
+        # Using OpenAI's Beta Structured Outputs method
+        completion = await client.beta.chat.completions.parse(
+            model=MODEL_ID,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            response_format=Event,  # Directly passes the Pydantic class
         )
-        event = response.parsed 
-
+        
+        event = completion.choices[0].message.parsed
         if not event:
             return None
 
@@ -66,9 +72,8 @@ async def extract_event_from_text(text: str) -> Event | None:
         return event
     
     except Exception as e:
-        print(f" Gemini Extraction Error: {e}")
+        print(f"❌ OpenAI Extraction Error: {e}")
         return None
-    
 
 
 class UpdateAnalysis(BaseModel):
@@ -97,22 +102,16 @@ async def detect_update_intent(text: str, context: dict) -> UpdateAnalysis:
     prev_title = context.get('title', 'Unknown')
     prev_time = context.get('start_time', 'Unknown')
 
-    prompt = f"""
-    CONTEXT: Last event was '{prev_title}' at '{prev_time}'.
-    USER MESSAGE: "{text}"
-    TASK: Is the user updating that event? Return JSON with is_update: true and extracted changes.
-    """
-
     try:
-        response = client.models.generate_content(
+        completion = await client.beta.chat.completions.parse(
             model=MODEL_ID,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": UpdateAnalysis,
-            },
+            messages=[
+                {"role": "system", "content": f"The last event was '{prev_title}' at '{prev_time}'. Determine if the user is updating that event."},
+                {"role": "user", "content": text}
+            ],
+            response_format=UpdateAnalysis,
         )
-        return response.parsed
+        return completion.choices[0].message.parsed
     except Exception as e:
         print(f"⚠️ Update detection failed: {e}")
         return UpdateAnalysis(is_update=False)

@@ -1,11 +1,10 @@
-openai
+openai>=1.0.0
 fastapi
 uvicorn
 pydantic
 python-dotenv
 tavily-python
 supabase
-google-genai
-dotenv
 httpx
 pytz
+apscheduler

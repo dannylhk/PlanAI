@@ -180,6 +180,49 @@ async def get_users_with_events_for_date(date_str: str) -> list:
 
 # app/services/crud.py
 
+async def delete_events_by_date(user_id: int, date_str: str) -> dict:
+    """
+    Deletes all events for a specific user on a specific date.
+    
+    Args:
+        user_id: Telegram User ID
+        date_str: YYYY-MM-DD format
+        
+    Returns:
+        dict with status and count of deleted events
+    """
+    try:
+        start_of_day = f"{date_str}T00:00:00"
+        end_of_day = f"{date_str}T23:59:59"
+        
+        print(f"   🗑️ Deleting events for {user_id} on {date_str}...")
+        
+        # First, count how many events will be deleted
+        count_response = supabase.table("events").select("id")\
+            .eq("user_id", user_id)\
+            .gte("start_time", start_of_day)\
+            .lte("start_time", end_of_day)\
+            .execute()
+        
+        deleted_count = len(count_response.data) if count_response.data else 0
+        
+        if deleted_count == 0:
+            return {"status": "success", "count": 0, "message": "No events to delete."}
+        
+        # Delete the events
+        response = supabase.table("events").delete()\
+            .eq("user_id", user_id)\
+            .gte("start_time", start_of_day)\
+            .lte("start_time", end_of_day)\
+            .execute()
+        
+        return {"status": "success", "count": deleted_count}
+        
+    except Exception as e:
+        print(f"⚠️ Delete Events Error: {e}")
+        return {"status": "error", "message": str(e), "count": 0}
+
+
 async def save_scavenged_events_batch(events: list[Event], user_id: int):
     """
     Phase 6: Batch-saves scavenged events to database.
