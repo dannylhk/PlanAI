@@ -204,6 +204,32 @@ When you add an event, PlanAI searches the web for relevant information:
 → https://nus-cs2103.github.io/website/
 ```
 
+### 8. 🗑️ `/clearall` - Clear Your Day & Rest!
+
+> _When you need a break from productivity_
+
+Sometimes you just need to clear your schedule and take a day off. PlanAI understands!
+
+**Command:** `/clearall`
+
+```
+🗑️ Cleared 4 events...
+
+💥 KABOOM! Your to-do list has exploded into confetti!
+
+🎊 Congratulations! You've unlocked: FREE TIME! 🎊
+
+Quick, do nothing before responsibilities find you! 🏃‍♂️
+
+Remember: You can't be late if you have nowhere to be *taps head*
+```
+
+**Features:**
+
+- ✅ Clears all events for today
+- ✅ Random goofy messages encouraging you to rest
+- ✅ Smart empty state detection ("Your schedule was already empty. You absolute legend. 👑")
+
 ---
 
 ## 🏗️ Architecture
@@ -231,7 +257,8 @@ When you add an event, PlanAI searches the web for relevant information:
 │   │                 │              │                         │  │
 │   │ • /agenda       │              │ • Event Detection       │  │
 │   │ • /track        │              │ • Update Detection      │  │
-│   │ • /force_brief  │              │ • Conflict Checking     │  │
+│   │ • /clearall     │              │ • Conflict Checking     │  │
+│   │ • /force_brief  │              │                         │  │
 │   └────────┬────────┘              └───────────┬─────────────┘  │
 └────────────┼───────────────────────────────────┼────────────────┘
              │                                   │
@@ -262,6 +289,7 @@ When you add an event, PlanAI searches the web for relevant information:
 │   • save_event_to_db() - With conflict detection                │
 │   • get_events_by_date() - For /agenda & briefings              │
 │   • update_event() - For statefulness updates                   │
+│   • delete_events_by_date() - For /clearall command             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -444,6 +472,26 @@ CS2103T lecture tomorrow at 2pm at I3
 ```
 
 **Expected:** Event card with web enrichment link to course website
+
+### Test 11: Clear All Events
+
+**In private chat with bot:**
+
+```
+/clearall
+```
+
+**Expected:** All today's events cleared + goofy rest message encouraging you to relax
+
+### Test 12: Clear All (Empty State)
+
+**In private chat (with no events today):**
+
+```
+/clearall
+```
+
+**Expected:** Message saying "Your schedule was already empty. You absolute legend. 👑"
 
 ---
 
