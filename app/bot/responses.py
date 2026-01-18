@@ -221,7 +221,7 @@ def format_event_card(event_data: Dict[str, Any], has_conflict: bool = False) ->
     
     This is the Phase 3 specification for displaying events with:
     - Clean header with event title
-    - Time information with emoji
+    - Time information with emoji (start AND end time)
     - Web enrichment links (if available)
     - Conflict warnings (if detected)
     
@@ -241,6 +241,7 @@ def format_event_card(event_data: Dict[str, Any], has_conflict: bool = False) ->
     event = {
         "title": "CS2103 Lecture",
         "start_time": "2026-01-24T14:00:00",
+        "end_time": "2026-01-24T15:00:00",
         "web_link": "https://nus-cs2103.github.io"
     }
     card = format_event_card(event, has_conflict=False)
@@ -260,16 +261,14 @@ def format_event_card(event_data: Dict[str, Any], has_conflict: bool = False) ->
     
     # Format the datetime for display
     start_time = format_datetime(start_time_raw) if start_time_raw != "Not specified" else "Not specified"
-    end_time = format_datetime(end_time_raw) if end_time_raw else None
+    end_time = format_datetime(end_time_raw) if end_time_raw else "Not specified"
     
     # Build the card
     card = f"<b>Event: {title}</b>\n\n"
     
-    # Time section
-    card += f"🕒 <i>{start_time}</i>"
-    if end_time:
-        card += f" - <i>{end_time}</i>"
-    card += "\n"
+    # Time section - always show both start and end times clearly
+    card += f"🕐 <b>Start:</b> <i>{start_time}</i>\n"
+    card += f"🕑 <b>End:</b> <i>{end_time}</i>\n"
     
     # Conflict warning (if applicable)
     if has_conflict:
