@@ -333,11 +333,22 @@ But I couldn't determine what to change. Please be more specific!
         changes_list = "\n".join(changes_text)
         conflicting_events = update_result.get("conflicting_events", [])
         
+        # Build conflict details with BOTH start and end times
         conflict_details = ""
         for idx, conflict in enumerate(conflicting_events[:3], 1):
+            title = conflict.get('title', 'Untitled')
+            
+            # Format start time
             start_time_raw = conflict.get('start_time', 'N/A')
             start_time_formatted = format_datetime(start_time_raw) if start_time_raw != 'N/A' else 'N/A'
-            conflict_details += f"\n{idx}. {conflict.get('title', 'Untitled')} ({start_time_formatted})"
+            
+            # Format end time - show why there's an overlap
+            end_time_raw = conflict.get('end_time')
+            end_time_formatted = format_datetime(end_time_raw) if end_time_raw else 'Not specified'
+            
+            conflict_details += f"\n\n{idx}. <b>{title}</b>"
+            conflict_details += f"\n   🕐 Start: {start_time_formatted}"
+            conflict_details += f"\n   🕑 End: {end_time_formatted}"
         
         message = f"""
 ⚠️ <b>Update Failed - Conflict Detected</b>
@@ -433,6 +444,7 @@ async def send_conflict_notification(user_id: int, event, conflict_info):
     Send conflict rejection notice to user's private chat using format_event_card.
     
     The event was NOT saved due to conflicts, so we show the conflict warning.
+    Shows both start AND end times of conflicting events so user understands the overlap.
     """
     from app.bot.responses import send_message, format_event_card
     
@@ -444,12 +456,22 @@ async def send_conflict_notification(user_id: int, event, conflict_info):
     # Use format_event_card with has_conflict=True
     card_message = format_event_card(event_data, has_conflict=True)
     
-    # Add details about the conflicting events
+    # Add details about the conflicting events with BOTH start and end times
     conflict_details = f"\n\n<b>Conflicting with:</b>"
     for idx, conflict in enumerate(conflicting_events[:3], 1):
+        title = conflict.get('title', 'Untitled')
+        
+        # Format start time
         start_time_raw = conflict.get('start_time', 'N/A')
         start_time_formatted = format_datetime(start_time_raw) if start_time_raw != 'N/A' else 'N/A'
-        conflict_details += f"\n{idx}. {conflict.get('title', 'Untitled')} ({start_time_formatted})"
+        
+        # Format end time - show why there's an overlap
+        end_time_raw = conflict.get('end_time')
+        end_time_formatted = format_datetime(end_time_raw) if end_time_raw else 'Not specified'
+        
+        conflict_details += f"\n\n{idx}. <b>{title}</b>"
+        conflict_details += f"\n   🕐 Start: {start_time_formatted}"
+        conflict_details += f"\n   🕑 End: {end_time_formatted}"
     
     conflict_details += "\n\n💡 <i>Please choose a different time or cancel one of the conflicting events.</i>"
     
