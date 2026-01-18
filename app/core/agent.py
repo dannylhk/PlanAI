@@ -109,11 +109,7 @@ async def scavenge_events(topic: str) -> List[Event]:
             return []
 
         # LLM prompt for structured event extraction
-        prompt = f"""
-Extract ALL specific events, deadlines, and dates related to '{topic}' from the text below.
-
-TEXT:
-{context_text}
+        system_prompt = f"""Extract ALL specific events, deadlines, and dates related to '{topic}' from the provided text.
 
 RULES:
 1. Return a JSON object with a key "events" containing a list of Event objects.
@@ -122,21 +118,20 @@ RULES:
 4. If the year is missing, assume 2026
 5. Set 'source' to 'web_scavenge' for all events
 6. Extract as many relevant events as possible from the text
-7. Include end_time if duration is mentioned (otherwise set to 1 hour after start)
-        """
+7. Include end_time if duration is mentioned (otherwise set to 1 hour after start)"""
 
-        # Call Gemini with structured output
-        response = client.models.generate_content(
+        # Use OpenAI structured output for the batch of events
+        completion = await client.beta.chat.completions.parse(
             model=MODEL_ID,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": ScavengeResponse,
-            },
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Extract events from this text:\n\n{context_text}"}
+            ],
+            response_format=ScavengeResponse,
         )
         
         # Access the parsed events from the wrapper
-        events = response.parsed.events
+        events = completion.choices[0].message.parsed.events
         
         print(f"   ✅ Extracted {len(events)} events from web search")
         

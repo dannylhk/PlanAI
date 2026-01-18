@@ -92,6 +92,14 @@ async def handle_hub_command(text: str, user_id: int):
     normalized_text = text.lower().strip()
     
     # ========================================================================
+    # CLEARALL: Clear all events for today and send a goofy rest message
+    # ========================================================================
+    if normalized_text == "/clearall":
+        print("   🗑️ /clearall command detected")
+        await handle_clearall_command(user_id)
+        return
+    
+    # ========================================================================
     # PHASE 7: /force_briefing - Demo Command for Nightly Briefing
     # ========================================================================
     if normalized_text == "/force_briefing":
@@ -123,34 +131,11 @@ async def handle_hub_command(text: str, user_id: int):
         
         print(f"   📆 Fetching events for: {date_string}")
         
-        # Step D: The Data Retrieval (Mock for now)
-        # TODO: Replace with: from app.services.crud import get_events_by_date
-        # TODO: events = await get_events_by_date(user_id, date_string)
+        # Step D: The Data Retrieval - Query real database
+        from app.services.crud import get_events_by_date
+        events = await get_events_by_date(user_id, date_string)
         
-        # Mock data - realistic schedule for testing
-        events = [
-            {
-                "start_time": "2026-01-18T09:00:00",
-                "title": "CS2103T Lecture",
-                "location": "I3 Auditorium",
-                "conflict": False
-            },
-            {
-                "start_time": "2026-01-18T14:00:00",
-                "title": "Team Meeting",
-                "location": "COM1-0210",
-                "conflict": False
-            },
-            {
-                "start_time": "2026-01-18T16:00:00",
-                "title": "Gym Session",
-                "location": None,  # Test null location handling
-                "conflict": False
-            }
-        ]
-        
-        # For testing empty state, uncomment this:
-        # events = []
+        print(f"   📊 Found {len(events)} events for today")
         
         # Step E: Dispatch - Format and send the agenda
         from app.bot.responses import format_agenda, send_message
@@ -498,6 +483,105 @@ Please try again later.
         print(f"   ✅ Error notification sent to user {user_id}")
     else:
         print(f"   ❌ Failed to send notification: {result.get('error')}")
+
+
+# ============================================================================
+# CLEARALL: Clear all events for today - The Ultimate Rest Mode
+# ============================================================================
+
+async def handle_clearall_command(user_id: int):
+    """
+    Clears all events for the current day and sends a goofy message
+    encouraging the user to take a break and rest.
+    
+    Usage: Send "/clearall" to the bot in private chat
+    
+    Args:
+        user_id: The user's Telegram ID
+    """
+    from datetime import datetime
+    import pytz
+    import random
+    from app.services.crud import delete_events_by_date
+    
+    print(f"\n🗑️ CLEARALL: User {user_id} wants to clear today's events")
+    
+    # Get today's date in Singapore timezone
+    singapore_tz = pytz.timezone('Asia/Singapore')
+    today = datetime.now(singapore_tz)
+    date_string = today.strftime("%Y-%m-%d")
+    
+    print(f"   📆 Clearing events for: {date_string}")
+    
+    # Delete all events for today
+    result = await delete_events_by_date(user_id, date_string)
+    
+    # Goofy rest messages
+    goofy_messages = [
+        "🛋️ <b>YEET! All your plans have been yeeted into the void!</b>\n\n"
+        "Go touch some grass, you deserve it. 🌱\n\n"
+        "Maybe take a nap? Or seven? 😴\n\n"
+        "<i>Your calendar is now as empty as my motivation on a Monday.</i>",
+        
+        "🎉 <b>POOF! Your schedule went *brrrrr* and disappeared!</b>\n\n"
+        "Time to become one with the couch. 🛋️\n\n"
+        "Netflix isn't gonna watch itself, you know. 📺\n\n"
+        "<i>Productivity? Never heard of her.</i>",
+        
+        "✨ <b>*waves magic wand* ABRACADABRA! Events begone!</b>\n\n"
+        "Your only task now is to REST. That's an order! 🫡\n\n"
+        "Go hydrate. Eat a snack. Pet a dog. 🐕\n\n"
+        "<i>You're officially on vacation (self-declared).</i>",
+        
+        "🚀 <b>Houston, we have liftoff! Your events have left the planet!</b>\n\n"
+        "Time to activate ultra-relaxation mode. 😎\n\n"
+        "Warning: May cause extreme comfort and happiness.\n\n"
+        "<i>Side effects include: smiling, breathing deeply, and actually enjoying life.</i>",
+        
+        "💥 <b>KABOOM! Your to-do list has exploded into confetti!</b>\n\n"
+        "🎊 Congratulations! You've unlocked: FREE TIME! 🎊\n\n"
+        "Quick, do nothing before responsibilities find you! 🏃‍♂️\n\n"
+        "<i>Remember: You can't be late if you have nowhere to be *taps head*</i>",
+    ]
+    
+    # Pick a random goofy message
+    goofy_message = random.choice(goofy_messages)
+    
+    if result.get("status") == "success":
+        deleted_count = result.get("count", 0)
+        
+        if deleted_count == 0:
+            # No events to delete
+            message = """
+🤷 <b>Ummm... there's nothing to clear!</b>
+
+Your schedule was already empty. You absolute legend. 👑
+
+You were ALREADY resting and didn't even know it!
+
+<i>Go ahead, continue being a professional relaxation expert.</i>
+            """.strip()
+        else:
+            # Events were deleted - show goofy message
+            message = f"🗑️ <i>Cleared {deleted_count} event{'s' if deleted_count != 1 else ''}...</i>\n\n{goofy_message}"
+        
+        await send_message(user_id, message)
+        print(f"   ✅ Cleared {deleted_count} events and sent goofy rest message")
+        
+    else:
+        # Error occurred
+        error_msg = f"""
+❌ <b>Oops! Something went wrong!</b>
+
+Could not clear your events.
+
+<b>Error:</b> {result.get('message', 'Unknown error')}
+
+Please try again later. (Or maybe it's a sign you shouldn't rest? Nah, definitely try again.)
+        """.strip()
+        
+        await send_message(user_id, error_msg)
+        print(f"   ❌ Failed to clear events: {result.get('message')}")
 
 
 # ============================================================================

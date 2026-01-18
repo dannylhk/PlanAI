@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status">
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python">
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688" alt="FastAPI">
-  <img src="https://img.shields.io/badge/AI-Gemini%202.5-orange" alt="Gemini">
+  <img src="https://img.shields.io/badge/AI-OpenAI%20GPT--4o-412991" alt="OpenAI">
   <img src="https://img.shields.io/badge/Platform-Telegram-0088cc" alt="Telegram">
 </p>
 
@@ -204,6 +204,32 @@ When you add an event, PlanAI searches the web for relevant information:
 → https://nus-cs2103.github.io/website/
 ```
 
+### 8. 🗑️ `/clearall` - Clear Your Day & Rest!
+
+> _When you need a break from productivity_
+
+Sometimes you just need to clear your schedule and take a day off. PlanAI understands!
+
+**Command:** `/clearall`
+
+```
+🗑️ Cleared 4 events...
+
+💥 KABOOM! Your to-do list has exploded into confetti!
+
+🎊 Congratulations! You've unlocked: FREE TIME! 🎊
+
+Quick, do nothing before responsibilities find you! 🏃‍♂️
+
+Remember: You can't be late if you have nowhere to be *taps head*
+```
+
+**Features:**
+
+- ✅ Clears all events for today
+- ✅ Random goofy messages encouraging you to rest
+- ✅ Smart empty state detection ("Your schedule was already empty. You absolute legend. 👑")
+
 ---
 
 ## 🏗️ Architecture
@@ -231,13 +257,14 @@ When you add an event, PlanAI searches the web for relevant information:
 │   │                 │              │                         │  │
 │   │ • /agenda       │              │ • Event Detection       │  │
 │   │ • /track        │              │ • Update Detection      │  │
-│   │ • /force_brief  │              │ • Conflict Checking     │  │
+│   │ • /clearall     │              │ • Conflict Checking     │  │
+│   │ • /force_brief  │              │                         │  │
 │   └────────┬────────┘              └───────────┬─────────────┘  │
 └────────────┼───────────────────────────────────┼────────────────┘
              │                                   │
              ▼                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                        AI Layer (Gemini 2.5)                    │
+│                      AI Layer (OpenAI GPT-4o)                   │
 │                      (app/core/llm.py)                          │
 │                                                                 │
 │   • extract_event_from_text() - Natural language → Event       │
@@ -262,6 +289,7 @@ When you add an event, PlanAI searches the web for relevant information:
 │   • save_event_to_db() - With conflict detection                │
 │   • get_events_by_date() - For /agenda & briefings              │
 │   • update_event() - For statefulness updates                   │
+│   • delete_events_by_date() - For /clearall command             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -273,7 +301,7 @@ When you add an event, PlanAI searches the web for relevant information:
 
 - Python 3.10+
 - Telegram Bot Token (from [@BotFather](https://t.me/botfather))
-- Google Gemini API Key
+- OpenAI API Key
 - Supabase Project (free tier works!)
 - Tavily API Key (for web search)
 
@@ -298,7 +326,7 @@ Create a `.env` file in the project root:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-GOOGLE_API_KEY=your_gemini_api_key
+OPENAI_API_KEY=your_openai_api_key
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
 TAVILY_API_KEY=your_tavily_api_key
@@ -445,6 +473,26 @@ CS2103T lecture tomorrow at 2pm at I3
 
 **Expected:** Event card with web enrichment link to course website
 
+### Test 11: Clear All Events
+
+**In private chat with bot:**
+
+```
+/clearall
+```
+
+**Expected:** All today's events cleared + goofy rest message encouraging you to relax
+
+### Test 12: Clear All (Empty State)
+
+**In private chat (with no events today):**
+
+```
+/clearall
+```
+
+**Expected:** Message saying "Your schedule was already empty. You absolute legend. 👑"
+
 ---
 
 ## 📁 Project Structure
@@ -467,7 +515,7 @@ PlanAI/
 │   │   └── utils.py        # Helper functions
 │   │
 │   ├── core/
-│   │   ├── llm.py          # Gemini AI integration
+│   │   ├── llm.py          # OpenAI GPT-4o integration
 │   │   ├── agent.py        # Web search agent (Tavily)
 │   │   └── prompts.py      # LLM system prompts
 │   │
@@ -490,16 +538,16 @@ PlanAI/
 
 ## 🛠️ Technologies
 
-| Technology            | Purpose                              |
-| --------------------- | ------------------------------------ |
-| **FastAPI**           | High-performance async web framework |
-| **Telegram Bot API**  | User interface via httpx             |
-| **Google Gemini 2.5** | Natural language understanding       |
-| **Tavily**            | Web search for deadline research     |
-| **Supabase**          | PostgreSQL database with real-time   |
-| **APScheduler**       | Cron jobs for nightly briefings      |
-| **Pydantic**          | Data validation & schemas            |
-| **pytz**              | Singapore timezone handling          |
+| Technology           | Purpose                              |
+| -------------------- | ------------------------------------ |
+| **FastAPI**          | High-performance async web framework |
+| **Telegram Bot API** | User interface via httpx             |
+| **OpenAI GPT-4o**    | Natural language understanding       |
+| **Tavily**           | Web search for deadline research     |
+| **Supabase**         | PostgreSQL database with real-time   |
+| **APScheduler**      | Cron jobs for nightly briefings      |
+| **Pydantic**         | Data validation & schemas            |
+| **pytz**             | Singapore timezone handling          |
 
 ---
 

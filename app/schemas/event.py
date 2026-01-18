@@ -8,7 +8,7 @@ class Event(BaseModel):
     title: str = Field(..., description="The headline for notifications (e.g., 'CS2103 Lecture', 'Team Meeting')")
     start_time: str = Field(..., description="ISO 8601 start time (e.g., '2026-01-17T14:00:00')")
     
-    end_time: Optional[str] = Field(..., description="ISO 8601 end time") # Kept required as per your logic, or make Optional if you prefer
+    end_time: Optional[str] = Field(None, description="ISO 8601 end time")
     
     location: Optional[str] = Field(None, description="Physical or virtual location context")
     description: Optional[str] = Field(None, description="Details or agenda")
