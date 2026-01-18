@@ -21,9 +21,9 @@
 
 | Channel                | Problem                                      |
 | ---------------------- | -------------------------------------------- |
-| 📧 **Official Emails** | Important deadlines buried in long chains    |
+| 📧 **Official Emails (coming soon)** | Important deadlines buried in long chains    |
 | 💬 **Telegram Groups** | Event details lost in 500+ unread messages   |
-| 📅 **Calendar Apps**   | Empty because manual entry is tedious        |
+| 📅 **Calendar Apps (coming soon)**   | Empty because manual entry is tedious        |
 | 🧠 **Human Memory**    | Unreliable for tracking multiple commitments |
 
 ### The Market Gap
